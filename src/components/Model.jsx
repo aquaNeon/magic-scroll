@@ -51,8 +51,8 @@ function MagicEffect({ position, show, key }) {
       // Stop showing after 1 second
       setTimeout(() => {
         clearInterval(fadeOutInterval);
-        setShow(false);
-      }, 50000);
+        // setShow(false);
+      }, 1000);
     }
   }, [show, key]);
 
@@ -92,6 +92,7 @@ export function Model(props) {
   const { nodes, materials, animations } = useGLTF('/assets/caludron.glb');
   const { actions } = useAnimations(animations, group);
   const [potionColor, setPotionColor] = useState(new THREE.Color(0x00ff00)); // Initial Potion color
+  const [emissiveIntensity, setEmissiveIntensity] = useState(1); // Initial emissive intensity
   const [visibleItems, setVisibleItems] = useState({
     EYE: true,
     FEATHER: true,
@@ -109,10 +110,10 @@ export function Model(props) {
   const potionMaterial = useMemo(() => new THREE.MeshStandardMaterial({
     color: potionColor,
     emissive: potionColor,
-    emissiveIntensity: 1,
-  }), [potionColor]);
+    emissiveIntensity: emissiveIntensity,
+  }), [potionColor, emissiveIntensity]);
 
-  // Update Potion and its children's material when the potionColor changes
+  // Update Potion and its children's material when the potionColor or emissiveIntensity changes
   useEffect(() => {
     if (nodes.Potion) {
       nodes.Potion.material = potionMaterial;
@@ -122,7 +123,7 @@ export function Model(props) {
       nodes.BUB4.material = potionMaterial;
       nodes.BUB5.material = potionMaterial;
     }
-  }, [potionColor, nodes, potionMaterial]);
+  }, [potionColor, emissiveIntensity, nodes, potionMaterial]);
 
   useEffect(() => {
     if (actions) {
@@ -137,12 +138,25 @@ export function Model(props) {
 
   // Handle item click
   const handleItemClick = (itemName, position) => {
-    setPotionColor(new THREE.Color(Math.random() * 0xffffff)); // Change Potion color to a random color
-    setVisibleItems(prevState => ({ ...prevState, [itemName]: false })); // Hide the clicked item
-    setEffectPosition(position.toArray()); // Set the effect position to the clicked item's position
+    // Change the emissive intensity
+    setEmissiveIntensity((prevIntensity) => prevIntensity + 0.5); // Increase emissive intensity
+
+    // Hide the clicked item
+    setVisibleItems(prevState => ({ ...prevState, [itemName]: false }));
+
+    // Check if it's the last item
+    const remainingItems = Object.values(visibleItems).filter(Boolean).length;
+    if (remainingItems === 1) {
+      setPotionColor(new THREE.Color(Math.random() * 0xffffff));
+      PointMaterial.emissiveIntensity = 10;
+
+    }
+
+    // Set the effect position and show the effect
+    setEffectPosition(position.toArray());
     setEffectKey(prevKey => prevKey + 1); // Update the effect key to trigger reinitialization
-    setShowEffect(true); // Show the effect
-    console.log(`${itemName} clicked`);
+    setShowEffect(true); 
+
   };
 
   // Handle pointer over event to change cursor
