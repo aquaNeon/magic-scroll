@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { Canvas, extend, useFrame, useThree } from '@react-three/fiber';
-import { useGLTF, useAnimations, Environment, useTexture } from '@react-three/drei';
+import { useGLTF, useAnimations, Environment, Points, PointMaterial } from '@react-three/drei';
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass';
@@ -24,210 +24,248 @@ function BloomEffect() {
   return null;
 }
 
-export function Model({ scrollPercent, ...props }) {
-  const group = useRef();
-  const { nodes, materials, animations } = useGLTF('/assets/baked006.glb');
-  const { actions } = useAnimations(animations, group);
-  const [rotationOffset, setRotationOffset] = useState(0);
-  const [hideBTC, setHideBTC] = useState(false); // State to hide BTC coin
-
-// Refs
-  const emissiveMaterialRef = useRef();
-
-  // Load the texture
-  const globeTexture = useTexture('/assets/world.jpg');
-
-  // Flip the texture vertically
-  useEffect(() => {
-    globeTexture.flipY = false;
-    globeTexture.needsUpdate = true; // Ensure the texture is updated after flipping
-  }, [globeTexture]);
-
-
-  const baseMaterial = useMemo(() => new THREE.MeshPhysicalMaterial({
-    metalness: 0.75,
-    roughness: 0.3,
-    reflectivity: 1,
-    clearcoat: 1,
-    clearcoatRoughness: 0,
-    transparent: true
-  }), []);
-
-  // Create materials with different colors based on the base material
-  const materialsConfig = useMemo(() => ({
-    orange: baseMaterial.clone(),
-    purple: baseMaterial.clone(),
-    blue: baseMaterial.clone(),
-    green: baseMaterial.clone(),
-    white: baseMaterial.clone(),
-    black: baseMaterial.clone(),
-  }), [baseMaterial]);
+function MagicEffect({ position, show, key }) {
+  const points = useRef();
+  const [velocities, setVelocities] = useState([]);
+  const [opacity, setOpacity] = useState(1);
 
   useEffect(() => {
-    materialsConfig.orange.color.set(0xffa500);
-    materialsConfig.purple.color.set(0xA04FE7);
-    materialsConfig.blue.color.set(0x4871AE);
-    materialsConfig.green.color.set(0x39B273);
-    materialsConfig.white.color.set(0xE7E7E7);
-    materialsConfig.black.color.set(0x000000);
-  }, [materialsConfig]);
-
-  // Create the emissive material for the globe and attach the ref
-  const emissiveMaterial = useMemo(() => {
-    const material = new THREE.MeshStandardMaterial({
-      emissive: new THREE.Color(0x8a2be2), // Initial globe color
-      emissiveIntensity: 5,
-    });
-    emissiveMaterialRef.current = material;
-    return material;
-  }, [globeTexture]);
-
-
-  // Create a scrollpath using a curve
-  const path = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(-1.5, -0.5, 0),
-    new THREE.Vector3(0.0, 0.0, 0),
-    new THREE.Vector3(0.0, 0, 0),
-    new THREE.Vector3(0.0, 0, 0),
-    new THREE.Vector3(0.0, 0, 0),
-    new THREE.Vector3(0.0, 0, 0),
-    new THREE.Vector3(-3.5, 0, 0)
-  ]);
-
-  // Update globe position and scale based on scroll percentage
-  useEffect(() => {
-    let pointOnPath = path.getPoint(scrollPercent);
-
-    // Rotate the globe in the middle of the scroll
-    if (scrollPercent > 0.3 && scrollPercent < 0.7) { // Adjusts the scroll range 
-      const rotationSpeed = 0.001; // Change this value for faster or slower rotation
-      const rotationProgress = (scrollPercent - 0.3) / 0.4; // Adjust the range length here
-      const rotationAngle = rotationSpeed * rotationProgress * Math.PI * 2; // Full rotation per rotationSpeed
-      setRotationOffset(rotationAngle);
-      pointOnPath = path.getPoint(0.5); // Keep the globe centered during rotation
-    } else {
-      setRotationOffset(0); // Reset rotation outside the middle scroll
-    }
-
-    if (group.current) {
-      group.current.position.copy(pointOnPath);
-      group.current.rotation.y += rotationOffset;
-
-      // Scale down the globe and scale up the coins when the scroll is done
-      if (scrollPercent >= 1) {
-        const scaleDownProgress = (scrollPercent - 1) / 0.05; // Adjust the range length here
-        const globeScaleValue = THREE.MathUtils.lerp(1, 0, scaleDownProgress);
-        const coinScaleValue = THREE.MathUtils.lerp(1, 2, scaleDownProgress);
-        const opacityValue = THREE.MathUtils.lerp(1, 0, scaleDownProgress);
-        group.current.scale.set(globeScaleValue, globeScaleValue, globeScaleValue);
-
-        // Update the scale and opacity of the coins
-        Object.keys(materialsConfig).forEach((key) => {
-          materialsConfig[key].opacity = opacityValue;
-        });
-
-        nodes.BTC.scale.set(coinScaleValue, coinScaleValue, coinScaleValue);
-        nodes.ETH.scale.set(coinScaleValue, coinScaleValue, coinScaleValue);
-        nodes.MATI.scale.set(coinScaleValue, coinScaleValue, coinScaleValue);
-        nodes.SOL.scale.set(coinScaleValue, coinScaleValue, coinScaleValue);
-        nodes.USDC.scale.set(coinScaleValue, coinScaleValue, coinScaleValue);
-        nodes.USDT.scale.set(coinScaleValue, coinScaleValue, coinScaleValue);
-      } else {
-        group.current.scale.set(1, 1, 1); // Reset scale before the end of the path
-        Object.keys(materialsConfig).forEach((key) => {
-          materialsConfig[key].opacity = 1;
-        });
-        nodes.BTC.scale.set(1, 1, 1);
-        nodes.ETH.scale.set(1, 1, 1);
-        nodes.MATI.scale.set(1, 1, 1);
-        nodes.SOL.scale.set(1, 1, 1);
-        nodes.USDC.scale.set(1, 1, 1);
-        nodes.USDT.scale.set(1, 1, 1);
+    if (show) {
+      setOpacity(1);
+      // Initialize velocities for the particles
+      const newVelocities = [];
+      for (let i = 0; i < 20; i++) {
+        newVelocities.push([
+          (Math.random() - 0.5) * 1.5, // x velocity
+          (Math.random() - 0.5) * 1.5, // y velocity
+          (Math.random() - 0.5) * 1.5, // z velocity
+        ]);
       }
-    }
-  }, [scrollPercent, rotationOffset, nodes, materialsConfig]);
+      setVelocities(newVelocities);
 
-  // Initialize animations and set up looping
+      // Fade out effect
+      const fadeOutInterval = setInterval(() => {
+        setOpacity((prev) => Math.max(prev - 0.05, 0));
+      }, 15);
+
+      // Stop showing after 1 second
+      setTimeout(() => {
+        clearInterval(fadeOutInterval);
+        setShow(false);
+      }, 50000);
+    }
+  }, [show, key]);
+
+  useFrame((state, delta) => {
+    if (points.current) {
+      const positions = points.current.geometry.attributes.position.array;
+      for (let i = 0; i < positions.length; i += 3) {
+        positions[i] += velocities[i / 3][0] * delta;
+        positions[i + 1] += velocities[i / 3][1] * delta;
+        positions[i + 2] += velocities[i / 3][2] * delta;
+      }
+      points.current.geometry.attributes.position.needsUpdate = true;
+    }
+  });
+
+  const particlePositions = useMemo(() => {
+    const positions = [];
+    for (let i = 0; i < 10; i++) {
+      positions.push((Math.random() - 0.5) * 0.5);
+      positions.push((Math.random() - 0.5) * 0.5);
+      positions.push((Math.random() - 0.5) * 0.5);
+    }
+    return new Float32Array(positions);
+  }, [key]);
+
+  return (
+    show && (
+      <Points ref={points} positions={particlePositions} position={position}>
+        <PointMaterial transparent color="#fffff0" size={0.05} sizeAttenuation depthWrite={false} opacity={opacity} />
+      </Points>
+    )
+  );
+}
+
+export function Model(props) {
+  const group = useRef();
+  const { nodes, materials, animations } = useGLTF('/assets/caludron.glb');
+  const { actions } = useAnimations(animations, group);
+  const [potionColor, setPotionColor] = useState(new THREE.Color(0x00ff00)); // Initial Potion color
+  const [visibleItems, setVisibleItems] = useState({
+    EYE: true,
+    FEATHER: true,
+    SHROOM: true,
+    FANG: true,
+    ROSE: true,
+    POTION: true,
+  });
+
+  const [effectPosition, setEffectPosition] = useState([0, 0, 0]);
+  const [showEffect, setShowEffect] = useState(false);
+  const [effectKey, setEffectKey] = useState(0);
+
+  // Create a base material for the Potion
+  const potionMaterial = useMemo(() => new THREE.MeshStandardMaterial({
+    color: potionColor,
+    emissive: potionColor,
+    emissiveIntensity: 1,
+  }), [potionColor]);
+
+  // Update Potion and its children's material when the potionColor changes
+  useEffect(() => {
+    if (nodes.Potion) {
+      nodes.Potion.material = potionMaterial;
+      nodes.BUB1.material = potionMaterial;
+      nodes.BUB2.material = potionMaterial;
+      nodes.BUB3.material = potionMaterial;
+      nodes.BUB4.material = potionMaterial;
+      nodes.BUB5.material = potionMaterial;
+    }
+  }, [potionColor, nodes, potionMaterial]);
+
   useEffect(() => {
     if (actions) {
       Object.values(actions).forEach(action => {
         action.setLoop(THREE.LoopRepeat, Infinity); // Ensure animations loop infinitely
         action.clampWhenFinished = false; // Don't clamp the last frame when the animation finishes
+        action.setEffectiveTimeScale(0.5); // Set animation speed to half
         action.play();
       });
     }
   }, [actions]);
 
-  // Handle BTC coin click
-  const handleBTCCoinClick = () => {
-    if (emissiveMaterialRef.current) {
-      emissiveMaterialRef.current.emissive.set(0xff0000); // Change globe color to red
-    }
-    setHideBTC(true); // Hide BTC coin
-    console.log('BTC coin clicked');
+  // Handle item click
+  const handleItemClick = (itemName, position) => {
+    setPotionColor(new THREE.Color(Math.random() * 0xffffff)); // Change Potion color to a random color
+    setVisibleItems(prevState => ({ ...prevState, [itemName]: false })); // Hide the clicked item
+    setEffectPosition(position.toArray()); // Set the effect position to the clicked item's position
+    setEffectKey(prevKey => prevKey + 1); // Update the effect key to trigger reinitialization
+    setShowEffect(true); // Show the effect
+    console.log(`${itemName} clicked`);
   };
 
+  // Handle pointer over event to change cursor
+  const handlePointerOver = (e) => {
+    document.body.style.cursor = 'pointer';
+  };
 
-  // Create the sphere geometry
-  const sphereGeometry = useMemo(() => new THREE.SphereGeometry(1, 16, 16), []); // Adjust the radius (1), widthSegments (32), and heightSegments (32) as needed
+  // Handle pointer out event to reset cursor
+  const handlePointerOut = (e) => {
+    document.body.style.cursor = 'auto';
+  };
 
   return (
     <>
       <Environment preset="sunset" />
       <BloomEffect />
       <group ref={group} {...props} dispose={null}>
-        <group name="Scene_noarc">
-          <mesh name="GLOBE" geometry={sphereGeometry} material={emissiveMaterial}>
-            {!hideBTC && (
-              <mesh
-                name="BTC"
-                geometry={nodes.BTC.geometry}
-                material={materialsConfig.orange}
-                position={[-0.243, -0.791, -1.111]}
-                rotation={[2.677, -0.196, 2.861]}
-                onClick={handleBTCCoinClick}
-              >
-                <mesh name="BTC_LOGO" geometry={nodes.BTC_LOGO.geometry} material={materialsConfig.white} />
-              </mesh>
-            )}
-            <mesh name="ETH" geometry={nodes.ETH.geometry} material={materialsConfig.white} position={[0.376, 1.006, 0.77]} rotation={[-1.047, 0.184, 1.076]}>
-              <mesh name="ETH_LOGO" geometry={nodes.ETH_LOGO.geometry} material={materialsConfig.black} />
-            </mesh>
-            <mesh name="MATI" geometry={nodes.MATI.geometry} material={materialsConfig.purple} position={[-0.179, -1.277, 0.12]} rotation={[1.477, -0.139, 1.153]}>
-              <mesh name="MATI_LOGO" geometry={nodes.MATI_LOGO.geometry} material={materialsConfig.white} />
-            </mesh>
-            <mesh name="P_BA006" geometry={nodes.P_BA006.geometry} material={materialsConfig.white} position={[0.507, 0.474, -0.719]} scale={0} />
-            <mesh name="P_BENG" geometry={nodes.P_BENG.geometry} material={materialsConfig.white} position={[0.214, 0.243, -0.945]} scale={0} />
-            <mesh name="P_BRIS007" geometry={nodes.P_BRIS007.geometry} material={materialsConfig.white} position={[-0.771, -0.436, -0.463]} scale={0} />
-            <mesh name="P_BRU" geometry={nodes.P_BRU.geometry} material={materialsConfig.white} position={[0.628, 0.774, -0.08]} scale={0} />
-            <mesh name="P_CAPE" geometry={nodes.P_CAPE.geometry} material={materialsConfig.white} position={[0.789, -0.535, -0.297]} scale={0.104} />
-            <mesh name="P_KAIRO" geometry={nodes.P_KAIRO.geometry} material={materialsConfig.white} position={[0.777, 0.503, -0.377]} scale={0} />
-            <mesh name="P_LAG" geometry={nodes.P_LAG.geometry} material={materialsConfig.white} position={[0.988, 0.1, -0.11]} scale={0} />
-            <mesh name="P_MEX" geometry={nodes.P_MEX.geometry} material={materialsConfig.white} position={[-0.173, 0.349, 0.921]} scale={0} />
-            <mesh name="P_MO006" geometry={nodes.P_MO006.geometry} material={materialsConfig.white} position={[0.226, 0.727, 0.645]} rotation={[0, 0.019, -0.019]} scale={0.01} />
-            <mesh name="P_NY" geometry={nodes.P_NY.geometry} material={materialsConfig.white} position={[0.186, 0.639, 0.748]} scale={0} />
-            <mesh name="P_SF" geometry={nodes.P_SF.geometry} material={materialsConfig.white} position={[-0.394, 0.589, 0.704]} scale={0} />
-            <mesh name="P_SP" geometry={nodes.P_SP.geometry} material={materialsConfig.white} position={[0.658, -0.373, 0.653]} scale={0} />
-            <mesh name="P_TOK" geometry={nodes.P_TOK.geometry} material={materialsConfig.white} position={[-0.61, 0.582, -0.537]} scale={0} />
-            <mesh name="SOL" geometry={nodes.SOL.geometry} material={materialsConfig.black} position={[-0.534, 0.453, 0.865]} rotation={[-0.581, -0.438, -0.348]}>
-              <group name="SOL_LOGO">
-                <mesh name="Mesh_279005" geometry={nodes.Mesh_279005.geometry} material={materialsConfig.white} />
-                <mesh name="Mesh_279005_1" geometry={nodes.Mesh_279005_1.geometry} material={materialsConfig.white} />
-              </group>
-            </mesh>
-           
-            <mesh name="USDC" geometry={nodes.USDC.geometry} material={materialsConfig.blue} position={[0.802, 0.378, 1.141]} rotation={[-0.232, 0.615, 0.128]}>
-              <mesh name="USDC_LOGO" geometry={nodes.USDC_LOGO.geometry} material={materialsConfig.white} />
-            </mesh>
-            <mesh name="USDT" geometry={nodes.USDT.geometry} material={materialsConfig.green} position={[-0.682, 0.302, -0.84]} rotation={[-2.696, -0.756, 2.732]}>
-              <mesh name="usdt_logo" geometry={nodes.usdt_logo.geometry} material={materialsConfig.white} />
+        <group name="MAGIC">
+          {visibleItems.PATH_FANG && (
+            <group name="PATH_FANG" position={[0.031, -0.212, -0.045]} rotation={[0.468, -0.273, -0.066]} scale={[1.212, 1.226, 1.323]} />
+          )}
+          {visibleItems.PATH_EYE && (
+            <group name="PATH_EYE" position={[0, -0.076, -0.186]} rotation={[-1.957, 0.442, -Math.PI]} scale={1.307} />
+          )}
+          {visibleItems.PATH_POTION && (
+            <group name="PATH_POTION" rotation={[1.508, 0.153, -1.18]} scale={1.296} />
+          )}
+          {visibleItems.PATH_SHROOM && (
+            <group name="PATH_SHROOM" position={[0.031, -0.192, -0.03]} rotation={[-1.773, 1.036, 1.746]} scale={1.136} />
+          )}
+          {visibleItems.PATH_FEATHER && (
+            <group name="PATH_FEATHER" position={[-0.084, -0.101, 0]} rotation={[-0.547, -0.24, -0.749]} scale={1.231} />
+          )}
+          {visibleItems.PATH_ROSE && (
+            <group name="PATH_ROSE" position={[0, 0.111, 0]} rotation={[-2.951, -0.099, -3.122]} scale={1.421} />
+          )}
+          <mesh name="CALUDRON" geometry={nodes.CALUDRON.geometry} material={materials.Gold}>
+            <mesh name="Potion" geometry={nodes.Potion.geometry} material={potionMaterial}>
+              <mesh name="BUB1" geometry={nodes.BUB1.geometry} material={potionMaterial} position={[-0.183, 0.72, 0.066]} scale={0.049} />
+              <mesh name="BUB2" geometry={nodes.BUB2.geometry} material={potionMaterial} position={[-0.195, 0.575, 0.196]} rotation={[0, -1.474, 0]} scale={0.041} />
+              <mesh name="BUB3" geometry={nodes.BUB3.geometry} material={potionMaterial} position={[0.149, 0.541, 0.384]} scale={0.023} />
+              <mesh name="BUB4" geometry={nodes.BUB4.geometry} material={potionMaterial} position={[-0.152, 0.441, -0.398]} scale={0.041} />
+              <mesh name="BUB5" geometry={nodes.BUB5.geometry} material={potionMaterial} position={[0.051, 0.442, -0.029]} scale={0.079} />
             </mesh>
           </mesh>
-        
+          {visibleItems.ROSE && (
+            <mesh
+              name="ROSE"
+              geometry={nodes.ROSE.geometry}
+              material={materials.chinese_rose_mat}
+              position={[-0.14, 0.378, -1.388]}
+              rotation={[-2.951, -0.099, -3.122]}
+              scale={1.25}
+              onClick={(e) => handleItemClick('ROSE', e.object.position)}
+              onPointerOver={handlePointerOver}
+              onPointerOut={handlePointerOut}
+            />
+          )}
+          {visibleItems.FANG && (
+            <mesh
+              name="FANG"
+              geometry={nodes.FANG.geometry}
+              material={materials.lambert2}
+              position={[-0.325, -0.787, 1.093]}
+              rotation={[0.468, -0.273, -0.066]}
+              onClick={(e) => handleItemClick('FANG', e.object.position)}
+              onPointerOver={handlePointerOver}
+              onPointerOut={handlePointerOut}
+            />
+          )}
+          {visibleItems.SHROOM && (
+            <mesh
+              name="SHROOM"
+              geometry={nodes.SHROOM.geometry}
+              material={materials['default']}
+              position={[1.008, 0.448, -0.146]}
+              rotation={[-1.773, 1.036, 1.746]}
+              onClick={(e) => handleItemClick('SHROOM', e.object.position)}
+              onPointerOver={handlePointerOver}
+              onPointerOut={handlePointerOut}
+            />
+          )}
+          {visibleItems.EYE && (
+            <mesh
+              name="EYE"
+              geometry={nodes.EYE.geometry}
+              material={materials.PM3D_Sphere3D_1}
+              position={[0.559, 1.019, -0.631]}
+              rotation={[-1.957, 0.442, -Math.PI]}
+              onClick={(e) => handleItemClick('EYE', e.object.position)}
+              onPointerOver={handlePointerOver}
+              onPointerOut={handlePointerOut}
+            />
+          )}
+          {visibleItems.FEATHER && (
+            <mesh
+              name="FEATHER"
+              geometry={nodes.FEATHER.geometry}
+              material={materials.Material}
+              position={[-0.377, 0.52, 1.022]}
+              rotation={[-0.547, -0.24, -0.749]}
+              onClick={(e) => handleItemClick('FEATHER', e.object.position)}
+              onPointerOver={handlePointerOver}
+              onPointerOut={handlePointerOut}
+            />
+          )}
+          {visibleItems.POTION && (
+            <mesh
+              name="POTION"
+              geometry={nodes.POTION.geometry}
+              material={materials.Potion_mat}
+              position={[0.197, -1.278, 0.08]}
+              rotation={[1.508, 0.153, -1.18]}
+              onClick={(e) => handleItemClick('POTION', e.object.position)}
+              onPointerOver={handlePointerOver}
+              onPointerOut={handlePointerOut}
+            />
+          )}
         </group>
       </group>
+      <MagicEffect position={effectPosition} show={showEffect} key={effectKey} />
     </>
   );
 }
 
-useGLTF.preload('/assets/baked006.glb');
+useGLTF.preload('/assets/caludron.glb');
